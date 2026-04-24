@@ -22,3 +22,24 @@ End-to-end data pipeline:
 - Secrets handled via GCP Secret Manager
 - Ephemeral cluster (cost optimized)
 - Modular code structure
+
+## Bronze Layer Pipeline
+- Source: Oracle ATP DB
+- Target: Iceberg tables on GCS
+- Orchestration: Airflow (Dataproc jobs)
+- Supports:
+  - Full refresh for dimensions
+  - Partition overwrite for fact tables
+- Logging:
+  - Structured JSON logs
+  - Partition-level logging
+
+## Dependencies
+
+This pipeline depends on an external Python package:
+
+- `utils.zip`
+  - Must be uploaded to GCS
+  - Should contain `utils/secrets.py`
+  - Used for securely retrieving database credentials
+  - Credentials are managed externally and passed at runtime via `--py-files`
