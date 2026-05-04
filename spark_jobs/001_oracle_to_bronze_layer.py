@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import lit
+from pyspark.sql.functions import lit, col, to_date
 from datetime import datetime
 
 from utils.secrets import get_secret
@@ -30,8 +30,12 @@ spark = SparkSession.builder.appName("Oracle DB to Bronze layer") \
     .config("spark.sql.catalog.tsrtc", "org.apache.iceberg.spark.SparkCatalog") \
     .config("spark.sql.catalog.tsrtc.type", "hadoop") \
     .config("spark.sql.catalog.tsrtc.warehouse", "gs://de-iceberg-lakehouse/tsrtc") \
+    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
     .getOrCreate()
-    
+
+spark.conf.set("spark.sql.iceberg.write.distribution-mode", "none")
+spark.conf.set("spark.sql.shuffle.partitions", "4")
+
 jdbc_url = """jdbc:oracle:thin:@(description=
 (retry_count=20)
 (retry_delay=3)
@@ -104,60 +108,103 @@ for tab in dim_tables:
             "event":"table_failed",
             "table":tab
             }))
-        
-for tab in fact_tables:
-    start_time = time.time()
-    logger.info(f"Reading table: {tab}")
+        raise
+
+# Reading distinct dates to address the memory issue. Large data is not processed in one attempt.  
+start_time = time.time()
+tab = "FCT_TICKET"
+
+try:
+    logger.info(f"Reading distinct DATE_KEYs for table: {tab}")
+
+    date_df = spark.read.jdbc(
+        url=jdbc_url,
+        table="(SELECT DISTINCT DATE_KEY FROM TSRTC_ROUTE.FCT_TICKET) tmp",
+        properties=connection_properties
+    )
+
+    date_keys = sorted([int(row["DATE_KEY"]) for row in date_df.collect()])
+
+    logger.info(json.dumps({
+        "event": "date_keys_fetched",
+        "table": tab,
+        "count": len(date_keys)
+    }))
+
+except Exception as e:
+    logger.exception(json.dumps({
+        "event":"date_keys_failed",
+        "table":tab
+        }))
+    raise
+
+table_initialized = False
+
+# Writing the rest date partitions 
+for idx, dk in enumerate(date_keys, start=1):
     
-    try:
+    partition_start = time.time()
+    logger.info(f"Processing DATE_KEY: {dk}")
+             
+    try:        
         df = spark.read.jdbc(
             url=jdbc_url,
-            table=f"TSRTC_ROUTE.{tab}",
-            column="DATE_KEY",
-            lowerBound=20230401,
-            upperBound=20230731,
-            numPartitions=4,
+            table=f"(SELECT * FROM TSRTC_ROUTE.FCT_TICKET WHERE DATE_KEY = {dk}) tmp",
             properties=connection_properties
-            )
-        
-        logger.info(json.dumps({
-            "event":"table_read_started",
-            "table":tab
-            }))
-        
-        logger.info("Adding ingestion time and source")
+        )
         
         df = df \
+            .withColumn("DATE_KEY", col("DATE_KEY").cast("int")) \
+            .withColumn(
+                "event_date",
+                to_date(col("DATE_KEY").cast("string"), "yyyyMMdd")
+            ) \
             .withColumn("ingestion_time", lit(ingest_time)) \
             .withColumn("load_date", lit(ingest_date)) \
             .withColumn("source_db", lit("Oracle ATP DB"))
-            
-        dates = [row["DATE_KEY"] for row in df.select("DATE_KEY").distinct().collect()]
-            
-        if not spark.catalog.tableExists(f"tsrtc.bronze.{tab.lower()}"):
-            df.writeTo(f"tsrtc.bronze.{tab.lower()}").partitionedBy("DATE_KEY").create()
-            
-        else:
-            df.writeTo(f"tsrtc.bronze.{tab.lower()}").overwritePartitions()
         
+        if not table_initialized:
+            try:
+                df.writeTo("tsrtc.bronze.fct_ticket").partitionedBy("event_date").create()
+                
+                logger.info("Table created successfully")
+                table_initialized = True
+                
+            except:
+                if "already exists" in str(e):
+                    logger.info("Table already exists, switching to overwrite")
+                    df.writeTo("tsrtc.bronze.fct_ticket").overwritePartitions()
+                    table_initialized = True
+                else:
+                    raise
+        
+        else:
+            df.writeTo("tsrtc.bronze.fct_ticket").overwritePartitions()
+        
+        df.unpersist(blocking=True)
+        spark.catalog.clearCache()
+
         logger.info(json.dumps({
-            "event":"table_write_success",
-            "table":tab,
-            "duration_sec":round(time.time() - start_time,2),
-            "message":"Partitions Overwritten"
-            }))
-          
-        logger.info(json.dumps({
-            "event": "partitions_written",
+            "event": "partition_write_success",
             "table": tab,
-            "partitions": dates,
-            "num_partitions": len(dates)
+            "date_key": dk,
+            "duration_sec": round(time.time() - partition_start, 2),
+            "total_dates": len(date_keys),
+            "processed_dates": idx
         }))
         
     except Exception as e:
         logger.exception(json.dumps({
-            "event":"table_failed",
-            "table":tab
-            }))
-        
+            "event": "partition_failed",
+            "table": tab,
+            "date_key": dk
+        }))
+        raise
+
+logger.info(json.dumps({
+    "event": "table_completed",
+    "table": tab,
+    "total_duration_sec": round(time.time() - start_time, 2)
+}))
+
 spark.stop()

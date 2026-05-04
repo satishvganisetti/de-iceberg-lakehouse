@@ -7,7 +7,7 @@ REGION = "asia-south1"
 CLUSTER_NAME = "iceberg-cluster"
 
 with DAG(
-        dag_id = "oracle_to_bronze_layer",
+        dag_id = "pipeline_trial",
         start_date=datetime(2026,1,1),
         schedule_interval=None,
         catchup=False
@@ -27,11 +27,11 @@ with DAG(
                 """
         )
 
-        bronze_layer = BashOperator(
-                task_id="bronze_layer",
+        bronze_small = BashOperator(
+                task_id="bronze_small",
                 bash_command=f"""
                 gcloud dataproc jobs submit pyspark \
-                gs://de-iceberg-lakehouse/spark_jobs/001_oracle_to_bronze_layer.py \
+                gs://de-iceberg-lakehouse/spark_jobs/01_bronze_load_sqlserver_small.py \
                 --cluster={CLUSTER_NAME} \
                 --region={REGION} \
                 --py-files=gs://de-iceberg-lakehouse/utils.zip
@@ -48,4 +48,4 @@ with DAG(
                 trigger_rule="all_done"
         )
 
-        create_spark_cluster >> bronze_layer >> delete_cluster
+        create_spark_cluster >> bronze_small >> delete_cluster
