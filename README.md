@@ -1,38 +1,50 @@
 # DE Iceberg Lakehouse Project
 
 ## Overview
-End-to-end data pipeline:
-- Source: Oracle ATP (JDBC)
-- Processing: Spark (Dataproc)
-- Storage: Iceberg on GCS
-- Orchestration: Airflow
+End-to-end Lakehouse pipeline using Medallion Architecture (Bronze → Silver → Gold-ready)
+
+* Source: Oracle ATP (JDBC), SQL Server
+* Processing: PySpark (Dataproc)
+* Storage: Apache Iceberg tables on GCS
+* Orchestration: Apache Airflow
 
 ## Pipeline
-1. Create Dataproc cluster
-2. Run Spark job (bronze ingestion)
-3. Delete cluster
+1. Create ephemeral Dataproc cluster
+2. Run Spark jobs:
+    * Bronze ingestion
+    * Silver transformations
+3. Delete cluster (cost optimization)
 
-## Structure
-- dags/ → Airflow DAGs
-- spark_jobs/ → PySpark jobs
-- utils/ → shared utilities (secrets, etc.)
-- scripts/ → cluster init scripts
+  ## Bronze Layer
+  * Raw data ingestion from source systems
+  * Minimal transformation
+
+  ## Silver Layer
+  * Clean, structured, analytics-ready data
+  * Business logic applied
+
+## Project Structure
+* dags/ → Airflow DAGs
+* spark_jobs/
+    - Bronze jobs
+    - Silver transformation jobs
+* utils/ → shared utilities (secrets, configs)
+* scripts/ → cluster init scripts
 
 ## Features
-- Secrets handled via GCP Secret Manager
-- Ephemeral cluster (cost optimized)
-- Modular code structure
+* Apache Iceberg for:
+    - ACID transactions
+    - Time travel
+    - Schema evolution
+* Ephemeral Dataproc clusters (cost-efficient)
+* Modular Spark jobs
+* Airflow orchestration
+* Structured logging (JSON)
 
-## Bronze Layer Pipeline
-- Source: Oracle ATP DB
-- Target: Iceberg tables on GCS
-- Orchestration: Airflow (Dataproc jobs)
-- Supports:
-  - Full refresh for dimensions
-  - Partition overwrite for fact tables
-- Logging:
-  - Structured JSON logs
-  - Partition-level logging
+## Secrets Management
+* Managed via GCP Secret Manager
+* Accessed through utils/secrets.py
+* Passed at runtime via --py-files
 
 ## Dependencies
 
@@ -40,6 +52,4 @@ This pipeline depends on an external Python package:
 
 - `utils.zip`
   - Must be uploaded to GCS
-  - Should contain `utils/secrets.py`
-  - Used for securely retrieving database credentials
-  - Credentials are managed externally and passed at runtime via `--py-files`
+  - Contains shared utilities (e.g., secrets handling)
