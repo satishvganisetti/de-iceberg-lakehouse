@@ -13,15 +13,21 @@ End-to-end Lakehouse pipeline using Medallion Architecture (Bronze → Silver �
 2. Run Spark jobs:
     * Bronze ingestion
     * Silver transformations
+    * Gold aggregation
 3. Delete cluster (cost optimization)
 
   ## Bronze Layer
   * Raw data ingestion from source systems
   * Minimal transformation
+  * Preserves source schema
 
   ## Silver Layer
   * Clean, structured, analytics-ready data
   * Business logic applied
+  * Deduplication and data quality handling
+
+  ## Gold Layer
+  * The Gold layer contains business-level aggregated datasets optimized for reporting, dashboards, and KPI analysis.
 
 ## Project Structure
 * dags/ → Airflow DAGs

@@ -75,6 +75,50 @@ with DAG(
                 --py-files=gs://de-iceberg-lakehouse/utils.zip
                 """
         )
+
+        gold_route_day = BashOperator(
+                task_id="gold_route_day",
+                bash_command=f"""
+                gcloud dataproc jobs submit pyspark \
+                gs://de-iceberg-lakehouse/spark_jobs/0031_gold_route_day.py \
+                --cluster={CLUSTER_NAME} \
+                --region={REGION} \
+                --py-files=gs://de-iceberg-lakehouse/utils.zip
+                """
+        )
+        
+        gold_depot_day = BashOperator(
+                task_id="gold_depot_day",
+                bash_command=f"""
+                gcloud dataproc jobs submit pyspark \
+                gs://de-iceberg-lakehouse/spark_jobs/0032_gold_depot_day.py \
+                --cluster={CLUSTER_NAME} \
+                --region={REGION} \
+                --py-files=gs://de-iceberg-lakehouse/utils.zip
+                """
+        )
+        
+        gold_stage_day = BashOperator(
+                task_id="gold_stage_day",
+                bash_command=f"""
+                gcloud dataproc jobs submit pyspark \
+                gs://de-iceberg-lakehouse/spark_jobs/0033_gold_stage_day.py \
+                --cluster={CLUSTER_NAME} \
+                --region={REGION} \
+                --py-files=gs://de-iceberg-lakehouse/utils.zip
+                """
+        )
+        
+        gold_kpi_daily = BashOperator(
+                task_id="gold_kpi_daily",
+                bash_command=f"""
+                gcloud dataproc jobs submit pyspark \
+                gs://de-iceberg-lakehouse/spark_jobs/0034_gold_kpi_daily.py \
+                --cluster={CLUSTER_NAME} \
+                --region={REGION} \
+                --py-files=gs://de-iceberg-lakehouse/utils.zip
+                """
+        )
         
         delete_cluster=BashOperator(
                 task_id="delete_cluster",
@@ -86,4 +130,4 @@ with DAG(
                 trigger_rule="all_done"
         )
 
-        create_spark_cluster >> bronze_ingestion >> silver_ticket_stage >> silver_stage_traffic >> silver_trip_summary >> delete_cluster
+        create_spark_cluster >> bronze_ingestion >> silver_ticket_stage >> silver_stage_traffic >> silver_trip_summary >> gold_route_day >> gold_depot_day >> gold_stage_day >> gold_kpi_daily >> delete_cluster
